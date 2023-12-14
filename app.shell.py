@@ -58,7 +58,7 @@ def main():
 
     with st.sidebar:
         guest = st.selectbox('Select Guest', options=guest_list, index=None, placeholder='Select Guest')
-        show_results = st.toggle('Show search results', False)
+        show_results = st.toggle('Show search results', True)
         alpha = st.slider('Alpha for hybrid search', 0.0, 1.0, 0.4, 0.1)
         limit = st.slider('Hybrid search retrieval results', 0, 10, 5, 1)
         use_reranker = st.toggle('Use reranker', True)
@@ -73,7 +73,8 @@ def main():
     st.write('\n')
     col1, _ = st.columns([7,3])
     # with col1:
-    query = st.chat_input('Enter your question: ')
+    query = st.chat_input('Enter your question: ') if do_rag \
+        else st.text_input('Enter your question: ')
 
     # with st.chat_message('assistant'):
 
