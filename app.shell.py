@@ -58,6 +58,7 @@ def main():
 
     with st.sidebar:
         guest = st.selectbox('Select Guest', options=guest_list, index=None, placeholder='Select Guest')
+        show_results = st.toggle('Show search results', False)
         alpha = st.slider('Alpha for hybrid search', 0.0, 1.0, 0.4, 0.1)
         limit = st.slider('Hybrid search retrieval results', 0, 10, 5, 1)
         use_reranker = st.toggle('Use reranker', True)
@@ -71,81 +72,33 @@ def main():
     st.subheader(f"Chat with the Impact Theory podcast: ")
     st.write('\n')
     col1, _ = st.columns([7,3])
-    with col1:
-        query = st.text_input('Enter your question: ')
-        st.write('\n\n\n\n\n')
+    # with col1:
+    query = st.chat_input('Enter your question: ')
 
-        if query:
-            ##############
-            # START CODE #
-            ##############
+    # with st.chat_message('assistant'):
 
-            # make hybrid call to weaviate
-            where_filter = {
-                "path": ["guest"],
-                "operator": "Equal",
-                "valueText": guest
-            } if guest else None
+    if query:
+        # make hybrid call to weaviate
+        where_filter = {
+            "path": ["guest"],
+            "operator": "Equal",
+            "valueText": guest
+        } if guest else None
 
-            hybrid_response = client.hybrid_search(query, index_name, alpha=alpha, limit=limit, where_filter=where_filter)
+        hybrid_response = client.hybrid_search(query, index_name, alpha=alpha, limit=limit, where_filter=where_filter)
 
-            # rerank results
-            ranked_response = reranker.rerank(hybrid_response, query, apply_sigmoid=True, top_k=top_k) if use_reranker else hybrid_response
+        # rerank results
+        ranked_response = reranker.rerank(hybrid_response, query, apply_sigmoid=True, top_k=top_k) if use_reranker else hybrid_response
 
-            # validate token count is below threshold
-            valid_response = validate_token_threshold(ranked_response,
-                                                       question_answering_prompt_series,
-                                                       query=query,
-                                                       tokenizer=encoding,
-                                                       token_threshold=3500,
-                                                       verbose=True)
-            ##############
-            #  END CODE  #
-            ##############
+        # validate token count is below threshold
+        valid_response = validate_token_threshold(ranked_response,
+                                                    question_answering_prompt_series,
+                                                    query=query,
+                                                    tokenizer=encoding,
+                                                    token_threshold=3500,
+                                                    verbose=True)
 
-            # generate LLM prompt
-            prompt = generate_prompt_series(query=query, results=valid_response)
-
-            # prep for streaming response
-            st.subheader("Response from Impact Theory (context)")
-            with st.spinner('Generating Response...'):
-                st.markdown("----")
-                #creates container for LLM response
-                chat_container, response_box = [], st.empty()
-
-                if do_rag:
-                    # execute chat call to LLM
-                    ##############
-                    # START CODE #
-                    ##############
-
-                    response = llm.get_chat_completion(prompt,
-                                                       temperature=temperature,
-                                                       show_response=True,
-                                                       max_tokens=500,
-                                                       stream=True)
-
-                    ##############
-                    #  END CODE  #
-                    ##############
-
-                    # iterate through the stream of events
-                    for chunk in response:
-                        try:
-                            # inserts chat stream from LLM
-                            with response_box:
-                                content = chunk.choices[0].delta.content
-                                if content:
-                                    chat_container.append(content)
-                                    result = "".join(chat_container).strip()
-                                    st.write(f'{result}')
-                        except Exception as e:
-                            print(e)
-                            continue
-
-            # ##############
-            # # START CODE #
-            # ##############
+        if show_results:
             st.subheader("Search Results")
             for i, hit in enumerate(valid_response):
                 col1, col2 = st.columns([7, 3], gap='large')
@@ -154,9 +107,7 @@ def main():
                 title = hit['title'] # get title
                 show_length = hit['length'] # get length
                 time_string = convert_seconds(show_length) # convert show_length to readable time string
-            # ##############
-            # #  END CODE  #
-            # ##############
+
                 with col1:
                     st.write( search_result(  i=i,
                                                 url=episode_url,
@@ -167,9 +118,45 @@ def main():
                             unsafe_allow_html=True)
                     st.write('\n\n')
                 with col2:
-                    # st.write(f"<a href={episode_url} <img src={image} width='200'></a>",
-                    #             unsafe_allow_html=True)
                     st.image(image, caption=title.split('|')[0], width=200, use_column_width=False)
+
+                st.markdown("----")
+
+        if do_rag:
+            st.chat_message('user').markdown(query)
+
+            with st.chat_message('assistant'):
+                # prep for streaming response
+                # st.subheader("Response from Impact Theory")
+                with st.spinner('Generating Response...'):
+
+                    # creates container for LLM response
+                    chat_container, response_box = [], st.empty()
+
+                    # generate LLM prompt
+                    prompt = generate_prompt_series(query=query, results=valid_response)
+
+                    # execute chat call to LLM
+                    response = llm.get_chat_completion(prompt,
+                                                        temperature=temperature,
+                                                        show_response=True,
+                                                        max_tokens=500,
+                                                        stream=True)
+
+                    # iterate through the stream of events
+                    for chunk in response:
+                        try:
+                            # inserts chat stream from LLM
+                            with response_box:
+                                content = chunk.choices[0].delta.content
+                                if content:
+                                    chat_container.append(content)
+                                    result = "".join(chat_container).strip()
+                                    st.markdown(f'{result}'+ "▌")
+                        except Exception as e:
+                            print(e)
+                            continue
+                    response_box.markdown(result)
 
 if __name__ == '__main__':
     main()
